@@ -1,6 +1,15 @@
 # PressNots
 
-PressNots is a Windows-only Rust console application that observes global mouse button events and raw reports from attached HID peripherals. It is intentionally dependency-free and uses the Win32 API directly.
+PressNots is a Windows-only Rust application that observes global mouse and keyboard button events plus raw reports from attached HID peripherals. It is intentionally dependency-free and uses the Win32 API directly.
+
+The native dashboard contains a detected-device list, a red indicator, and a status bar:
+
+- Every Raw Input device discovered at launch appears at the top, including keyboards.
+- Each mouse, keyboard, or mapped HID row has its own activity lamp. It glows bright red while that specific device has a recognized button or key held.
+- The central indicator glows bright red while one or more recognized buttons are held. It is intentionally compact so the device list remains visible.
+- The status bar shows `Pressed: <button>` while active and retains `Last button: <button>` after release.
+- The Windows title and taskbar entry also change to `PressNots - <button>` so the latest input remains visible when the window is minimized.
+- Simultaneous presses are tracked independently; the light turns off only after every held button is released.
 
 ## Requirements
 
@@ -24,7 +33,7 @@ cargo run --release -- --block-mouse
 
 Press `Ctrl+C` to stop. Use suppression carefully because the mouse buttons remain blocked until the process exits.
 
-Example output:
+The console remains available for detailed diagnostics. Example output:
 
 ```text
 mouse button=x1 action=down x=1249 y=773
@@ -36,19 +45,24 @@ hid device=0x1234 name="...VID_1234..." report_size=4 report_count=1 data=[05 00
 
 PressNots uses two complementary Windows input APIs:
 
-1. A `WH_MOUSE_LL` low-level hook decodes left, right, middle, X1, and X2 mouse button down/up messages. The `--block-mouse` option can suppress only these decoded messages.
-2. Raw Input discovers every attached non-keyboard HID top-level collection and registers its usage page and usage. Reports are printed as hexadecimal bytes so uncommon buttons are visible even before their device-specific format is known.
+1. A `WH_MOUSE_LL` low-level hook decodes left, right, middle, X1, and X2 mouse button down/up messages. It drives the central indicator and status text. The `--block-mouse` option can suppress only these decoded messages.
+2. Raw Input enumerates attached mice, keyboards, and HID top-level collections. Raw Mouse button flags identify which physical mouse produced a click, while `RAWKEYBOARD` make/break records identify the physical keyboard and key. Both paths drive the corresponding device row's lamp.
+3. Windows resolves keyboard scan codes to display names such as `A`, `Right Ctrl`, or `F12`. PressNots tracks extended-key identity so left/right and keypad variants do not overwrite each other's held state.
+4. Vendor HID reports are printed as hexadecimal bytes so uncommon buttons are visible even before their device-specific format is known. A mapped HID button drives both the central indicator and its device row.
+
+Standard keyboard keys and left, right, middle, X1, and X2 mouse events drive the dashboard immediately. Raw Input handles provide device identity; the low-level mouse hook itself does not identify hardware. A vendor HID report drives the dashboard after that button has an entry in `CUSTOM_HID_BUTTONS`; an arbitrary raw report cannot safely be called a press until its device-specific bit layout is known.
 
 Raw Input registrations apply to usage classes. A device connected later is captured when its usage class was present at launch. Restart PressNots after attaching a device with a previously unseen usage class.
 
 ## Uncommon input coverage
 
-The unit suite covers cases often omitted from mouse and HID implementations:
+The unit suite covers cases often omitted from mouse, keyboard, and HID implementations:
 
 - Middle-button down and up.
 - X1 and X2, including isolation of their identifier from the high word of `mouseData`.
 - An unknown future X-button identifier, reported as `x-unknown` rather than incorrectly treated as X2.
 - Wheel, horizontal-wheel, and movement messages being ignored as non-click input.
+- Extended keyboard keys, make/break transitions, short records, and unrelated messages.
 - Multiple HID reports delivered in one `WM_INPUT` message.
 - Truncated, zero-length, zero-count, and multiplication-overflow HID payloads.
 - High-bit button masks, active-low electrical semantics, report IDs, device filters, and short reports.
@@ -113,7 +127,8 @@ Add a unit test using a local `HidButtonDefinition` array before putting the def
 - Hardware hidden behind a vendor service, non-HID protocol, or proprietary driver may require that vendor's SDK or a custom driver.
 - Windows secure desktops and higher-integrity processes can prevent a normal process from observing or suppressing input.
 - Raw HID reports are observed but cannot be suppressed through Raw Input. Device-specific suppression generally requires a filter driver.
-- PressNots deliberately excludes keyboard Raw Input and does not log keystrokes.
+- Keyboard events are transient UI state only. PressNots displays individual key names but does not reconstruct typed text, write key history to disk, or transmit input.
+- Keyboard events are observed but not suppressed. The `--block-mouse` option affects decoded mouse button events only.
 - The current output may contain repeated raw HID state reports; named custom button events are edge-filtered.
 
 ## Project layout
