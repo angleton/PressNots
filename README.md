@@ -75,25 +75,25 @@ cargo fmt -- --check
 cargo clippy -- -D warnings
 ```
 
-The pure `decode_mouse_message`, `parse_hid_payload`, and `decode_hid_buttons` functions are the test boundaries. Win32 callbacks delegate to them, so tests exercise the same decoding used at runtime without installing global hooks.
+Pure decoders in `input/mouse.rs`, `input/keyboard.rs`, and `input/hid.rs` are the test boundaries. Each module keeps its focused unit tests beside the implementation. State-transition tests live beside `UiState` in `state.rs`. Win32 callbacks delegate to these modules, so tests exercise the same decoding used at runtime without installing global hooks.
 
 ## Add a standard Windows mouse button
 
 When Windows exposes a new button as a distinct low-level mouse message:
 
-1. Add its `WM_*DOWN` and `WM_*UP` constants beside the existing message constants in `src/main.rs`.
-2. Add both cases to `decode_mouse_message` and choose a stable output name.
-3. Add down/up assertions to the `tests` module.
+1. Add its `WM_*DOWN` and `WM_*UP` constants beside the existing message constants in `src/windows_app/input/mouse.rs`.
+2. Add both cases to `decode_message` and choose a stable output name.
+3. Add down/up assertions to that module's `tests` block.
 4. Run the three checks above, then perform a real-device smoke test.
 
 Do not classify wheel messages as clicks. A double-click is normally represented at this hook level by two down/up sequences rather than a separate low-level message.
 
 ## Add a vendor HID button
 
-Vendor controls have no universal byte format. Obtain the report layout from the HID report descriptor, vendor documentation, or recordings made while pressing only that control. Then add an entry to `CUSTOM_HID_BUTTONS` in `src/main.rs`:
+Vendor controls have no universal byte format. Obtain the report layout from the HID report descriptor, vendor documentation, or recordings made while pressing only that control. Then add an entry to `CUSTOM_BUTTONS` in `src/windows_app/input/hid.rs`:
 
 ```rust
-const CUSTOM_HID_BUTTONS: &[HidButtonDefinition] = &[HidButtonDefinition {
+const CUSTOM_BUTTONS: &[HidButtonDefinition] = &[HidButtonDefinition {
 	name: "rear-paddle-4",
 	device_name_contains: "VID_1234&PID_5678",
 	report_id: Some(5),
@@ -119,7 +119,7 @@ hid-button device=0x1234 button=rear-paddle-4 action=down
 hid-button device=0x1234 button=rear-paddle-4 action=up
 ```
 
-Add a unit test using a local `HidButtonDefinition` array before putting the definition in `CUSTOM_HID_BUTTONS`. Test at least pressed, released, wrong report ID, wrong device, and a report shorter than `byte_offset`.
+Add a unit test using a local `HidButtonDefinition` array before putting the definition in `CUSTOM_BUTTONS`. Test at least pressed, released, wrong report ID, wrong device, and a report shorter than `byte_offset`.
 
 ## Limits and safety
 
@@ -138,7 +138,17 @@ PressNots/
 |-- Cargo.toml       Package and release configuration
 |-- README.md        Usage, architecture, extension, and test guide
 `-- src/
-	`-- main.rs      Win32 bindings, hooks, decoders, handlers, and tests
+	|-- main.rs      Platform gate and application entry point
+	`-- windows_app/
+		|-- mod.rs   Startup, Raw Input registration, and event routing
+		|-- state.rs Dashboard state and state-transition tests
+		|-- ui.rs    Native window messages, painting, and redraws
+		|-- win32.rs Win32 ABI types, constants, and linked functions
+		`-- input/
+			|-- mod.rs
+			|-- mouse.rs     Mouse decoders and tests
+			|-- keyboard.rs  Keyboard decoders, key names, and tests
+			`-- hid.rs       HID parsing, mappings, and tests
 ```
 
 ## Build a standalone executable
