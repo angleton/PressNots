@@ -15,8 +15,11 @@ pub(crate) type Wparam = usize;
 pub(crate) const WH_MOUSE_LL: i32 = 14;
 pub(crate) const WM_DESTROY: Uint = 0x0002;
 pub(crate) const WM_PAINT: Uint = 0x000f;
+pub(crate) const WM_CONTEXTMENU: Uint = 0x007b;
 pub(crate) const WM_INPUT: Uint = 0x00ff;
 pub(crate) const WM_QUIT: Uint = 0x0012;
+pub(crate) const WM_KEYDOWN: Uint = 0x0100;
+pub(crate) const WM_LBUTTONDOWN: Uint = 0x0201;
 pub(crate) const WM_APP_UPDATE_UI: Uint = 0x8001;
 pub(crate) const RID_INPUT: Uint = 0x10000003;
 pub(crate) const RIDI_DEVICENAME: Uint = 0x20000007;
@@ -27,6 +30,17 @@ pub(crate) const RIM_TYPEHID: Dword = 2;
 pub(crate) const RIDEV_INPUTSINK: Dword = 0x00000100;
 pub(crate) const ERROR_VALUE: Uint = Uint::MAX;
 pub(crate) const WS_OVERLAPPEDWINDOW: Dword = 0x00cf0000;
+pub(crate) const WS_CHILD: Dword = 0x40000000;
+pub(crate) const WS_VISIBLE: Dword = 0x10000000;
+pub(crate) const WS_BORDER: Dword = 0x00800000;
+pub(crate) const ES_AUTOHSCROLL: Dword = 0x0080;
+pub(crate) const EM_SETSEL: Uint = 0x00b1;
+pub(crate) const VK_RETURN: Wparam = 0x0d;
+pub(crate) const VK_ESCAPE: Wparam = 0x1b;
+pub(crate) const MF_STRING: Uint = 0x0000;
+pub(crate) const MF_GRAYED: Uint = 0x0001;
+pub(crate) const TPM_RIGHTBUTTON: Uint = 0x0002;
+pub(crate) const TPM_RETURNCMD: Uint = 0x0100;
 pub(crate) const CW_USEDEFAULT: i32 = i32::MIN;
 pub(crate) const SW_SHOW: i32 = 5;
 pub(crate) const DT_LEFT: Uint = 0x0000;
@@ -75,6 +89,8 @@ pub(crate) struct PaintStruct {
 
 pub(crate) type WndProc = Option<unsafe extern "system" fn(Hwnd, Uint, Wparam, Lparam) -> Lresult>;
 pub(crate) type HookProc = Option<unsafe extern "system" fn(i32, Wparam, Lparam) -> Lresult>;
+pub(crate) type SubclassProc =
+    Option<unsafe extern "system" fn(Hwnd, Uint, Wparam, Lparam, usize, usize) -> Lresult>;
 
 #[repr(C)]
 pub(crate) struct WndClassW {
@@ -166,6 +182,10 @@ unsafe extern "system" {
         instance: Hinstance,
         param: *const c_void,
     ) -> Hwnd;
+    pub(crate) fn AppendMenuW(menu: Handle, flags: Uint, item_id: usize, text: *const u16) -> Bool;
+    pub(crate) fn CreatePopupMenu() -> Handle;
+    pub(crate) fn DestroyMenu(menu: Handle) -> Bool;
+    pub(crate) fn DestroyWindow(hwnd: Hwnd) -> Bool;
     pub(crate) fn DefWindowProcW(
         hwnd: Hwnd,
         message: Uint,
@@ -182,8 +202,11 @@ unsafe extern "system" {
     ) -> i32;
     pub(crate) fn FillRect(dc: Handle, rect: *const Rect, brush: Handle) -> i32;
     pub(crate) fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> Bool;
+    pub(crate) fn GetCursorPos(point: *mut Point) -> Bool;
     pub(crate) fn GetKeyNameTextW(l_param: i32, text: *mut u16, size: i32) -> i32;
     pub(crate) fn GetMessageW(message: *mut Msg, hwnd: Hwnd, min: Uint, max: Uint) -> Bool;
+    pub(crate) fn GetWindowTextLengthW(hwnd: Hwnd) -> i32;
+    pub(crate) fn GetWindowTextW(hwnd: Hwnd, text: *mut u16, max_count: i32) -> i32;
     pub(crate) fn GetRawInputData(
         input: Hrawinput,
         command: Uint,
@@ -212,6 +235,14 @@ unsafe extern "system" {
         count: Uint,
         size: Uint,
     ) -> Bool;
+    pub(crate) fn ScreenToClient(hwnd: Hwnd, point: *mut Point) -> Bool;
+    pub(crate) fn SendMessageW(
+        hwnd: Hwnd,
+        message: Uint,
+        w_param: Wparam,
+        l_param: Lparam,
+    ) -> Lresult;
+    pub(crate) fn SetFocus(hwnd: Hwnd) -> Hwnd;
     pub(crate) fn SetWindowsHookExW(
         kind: i32,
         proc: HookProc,
@@ -221,10 +252,36 @@ unsafe extern "system" {
     pub(crate) fn SetWindowTextW(hwnd: Hwnd, text: *const u16) -> Bool;
     pub(crate) fn ShowWindow(hwnd: Hwnd, command: i32) -> Bool;
     pub(crate) fn TranslateMessage(message: *const Msg) -> Bool;
+    pub(crate) fn TrackPopupMenu(
+        menu: Handle,
+        flags: Uint,
+        x: i32,
+        y: i32,
+        reserved: i32,
+        hwnd: Hwnd,
+        rect: *const Rect,
+    ) -> Uint;
     pub(crate) fn UnhookWindowsHookEx(hook: Hhook) -> Bool;
     pub(crate) fn UpdateWindow(hwnd: Hwnd) -> Bool;
     pub(crate) fn BeginPaint(hwnd: Hwnd, paint: *mut PaintStruct) -> Handle;
     pub(crate) fn EndPaint(hwnd: Hwnd, paint: *const PaintStruct) -> Bool;
+}
+
+#[link(name = "comctl32")]
+unsafe extern "system" {
+    pub(crate) fn DefSubclassProc(
+        hwnd: Hwnd,
+        message: Uint,
+        w_param: Wparam,
+        l_param: Lparam,
+    ) -> Lresult;
+    pub(crate) fn RemoveWindowSubclass(hwnd: Hwnd, proc: SubclassProc, subclass_id: usize) -> Bool;
+    pub(crate) fn SetWindowSubclass(
+        hwnd: Hwnd,
+        proc: SubclassProc,
+        subclass_id: usize,
+        reference_data: usize,
+    ) -> Bool;
 }
 
 #[link(name = "gdi32")]

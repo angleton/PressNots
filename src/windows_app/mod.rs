@@ -1,3 +1,4 @@
+mod aliases;
 mod input;
 mod state;
 mod ui;
@@ -160,7 +161,11 @@ unsafe fn register_raw_devices(hwnd: Hwnd) -> Result<(), String> {
         };
         let name = unsafe { device_name(entry.device as usize) }
             .unwrap_or_else(|| format!("device 0x{:x}", entry.device as usize));
-        register_ui_device(entry.device as usize, format!("{kind}  {name}"));
+        register_ui_device(
+            entry.device as usize,
+            name.clone(),
+            format!("{kind}  {name}"),
+        );
         if entry.kind == RIM_TYPEHID {
             let mut info: RidDeviceInfo = unsafe { zeroed() };
             info.size = size_of::<RidDeviceInfo>() as Dword;
@@ -367,7 +372,7 @@ pub(crate) fn run() -> Result<(), String> {
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             520,
-            760,
+            620,
             null_mut(),
             null_mut(),
             instance,

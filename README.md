@@ -2,11 +2,11 @@
 
 PressNots is a Windows-only Rust application that observes global mouse and keyboard button events plus raw reports from attached HID peripherals. It is intentionally dependency-free and uses the Win32 API directly.
 
-The native dashboard contains a detected-device list, a red indicator, and a status bar:
+The native dashboard contains a detected-device list and a status bar:
 
 - Every Raw Input device discovered at launch appears at the top, including keyboards.
 - Each mouse, keyboard, or mapped HID row has its own activity lamp. It glows bright red while that specific device has a recognized button or key held.
-- The central indicator glows bright red while one or more recognized buttons are held. It is intentionally compact so the device list remains visible.
+- Device names can be customized and are restored automatically on future runs.
 - The status bar shows `Pressed: <button>` while active and retains `Last button: <button>` after release.
 - The Windows title and taskbar entry also change to `PressNots - <button>` so the latest input remains visible when the window is minimized.
 - Simultaneous presses are tracked independently; the light turns off only after every held button is released.
@@ -33,6 +33,20 @@ cargo run --release -- --block-mouse
 
 Press `Ctrl+C` to stop. Use suppression carefully because the mouse buttons remain blocked until the process exits.
 
+## Rename devices
+
+Click a device row to edit its name. Press `Enter` or click elsewhere in the PressNots window to save, or press `Escape` to cancel. Saving an empty name removes the alias and restores the default device label.
+
+Right-click a device row and select `Reset to default name` to remove its saved alias. The same menu offers `Undo last reset` during the current run, which restores and persists the exact previous alias.
+
+Aliases are matched using the stable Raw Input device path rather than the transient Windows device handle. They are stored as JSON in:
+
+```text
+%LOCALAPPDATA%\PressNots\device_aliases.json
+```
+
+If the file is missing or malformed, PressNots starts with default labels. A new valid file is written the next time a device is renamed.
+
 The console remains available for detailed diagnostics. Example output:
 
 ```text
@@ -45,10 +59,10 @@ hid device=0x1234 name="...VID_1234..." report_size=4 report_count=1 data=[05 00
 
 PressNots uses two complementary Windows input APIs:
 
-1. A `WH_MOUSE_LL` low-level hook decodes left, right, middle, X1, and X2 mouse button down/up messages. It drives the central indicator and status text. The `--block-mouse` option can suppress only these decoded messages.
+1. A `WH_MOUSE_LL` low-level hook decodes left, right, middle, X1, and X2 mouse button down/up messages. It drives the status text. The `--block-mouse` option can suppress only these decoded messages.
 2. Raw Input enumerates attached mice, keyboards, and HID top-level collections. Raw Mouse button flags identify which physical mouse produced a click, while `RAWKEYBOARD` make/break records identify the physical keyboard and key. Both paths drive the corresponding device row's lamp.
 3. Windows resolves keyboard scan codes to display names such as `A`, `Right Ctrl`, or `F12`. PressNots tracks extended-key identity so left/right and keypad variants do not overwrite each other's held state.
-4. Vendor HID reports are printed as hexadecimal bytes so uncommon buttons are visible even before their device-specific format is known. A mapped HID button drives both the central indicator and its device row.
+4. Vendor HID reports are printed as hexadecimal bytes so uncommon buttons are visible even before their device-specific format is known. A mapped HID button drives its device row and the status text.
 
 Standard keyboard keys and left, right, middle, X1, and X2 mouse events drive the dashboard immediately. Raw Input handles provide device identity; the low-level mouse hook itself does not identify hardware. A vendor HID report drives the dashboard after that button has an entry in `CUSTOM_HID_BUTTONS`; an arbitrary raw report cannot safely be called a press until its device-specific bit layout is known.
 
@@ -141,6 +155,7 @@ PressNots/
 	|-- main.rs      Platform gate and application entry point
 	`-- windows_app/
 		|-- mod.rs   Startup, Raw Input registration, and event routing
+		|-- aliases.rs Persistent device aliases
 		|-- state.rs Dashboard state and state-transition tests
 		|-- ui.rs    Native window messages, painting, and redraws
 		|-- win32.rs Win32 ABI types, constants, and linked functions
